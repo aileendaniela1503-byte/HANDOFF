@@ -1,0 +1,55 @@
+{
+  "summary": "Planned Handoff backend tested end-to-end. 18 new pytest tests in test_planned_handoff.py, all passing; full backend suite is 45/45 green (planned + voice + earlier handoff tests). Coverage includes: POST /api/planned validation (happy path + 6 failure modes: end<=start, end==start, empty contact_ids, empty profile_ids, foreign contact_id, foreign profile_id), GET /api/planned scoping (excludes emergency + cancelled + resolved), auto-activation on read (share docs created + delivery_status flipped from pending), planned event returned by GET /api/events/active, GET /api/share/{token} scoping (P2 excluded, event_type='planned', title present), auto-expiry (event -> resolved, share -> {expired:true}), PUT allowed only while status=scheduled (404 once active), DELETE cancels both scheduled and active events (share -> {expired:true}), emergency /api/activate still works alongside planned, regressions on free-tier voice cap (402 on 2nd) and /api/share/{token}/page still emitting <audio ... autoplay>. Emails to delivered@resend.dev came back with delivery_status='sent' or 'failed' (both accepted per spec) — never remained 'pending'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/planned (auto-transition)",
+        "issue": "In _evaluate_planned_transitions (server.py:738-791), if a scheduled event's end_at is already past by the time the first read arrives (scheduled window entirely missed), the event goes directly to 'resolved' WITHOUT ever creating shares or sending emails. This is defensive but silent — the contacts never receive the planned-handoff email even though the event was 'kept alive' by the user. Consider logging or an explicit 'missed' status."
+      },
+      {
+        "endpoint": "GET /api/planned, GET /api/events/active, GET /api/share/{token}",
+        "issue": "State transitions are lazy (only fire on user reads). A planned event will not activate until its owner (or a share visitor) hits an endpoint that calls _evaluate_planned_transitions. If nobody polls, the event stays 'scheduled' past start_at and emails never send. Acceptable in this app but should be documented; a lightweight background task would be more reliable."
+      },
+      {
+        "endpoint": "PUT /api/planned/{id}",
+        "issue": "Validates start<end but does NOT re-validate profile_ids / contact_ids belong to the user (unlike POST). A user could rename a scheduled planned event and inject foreign IDs. Add the same ownership check as create_planned."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_planned_handoff.py",
+    "/app/backend/tests/test_handoff_backend.py",
+    "/app/backend/tests/test_voice_features.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/planned_handoff.xml"
+  ],
+  "action_items": [
+    "OPTIONAL — PUT /api/planned/{event_id} does not validate that profile_ids / contact_ids belong to the caller. Copy the ownership check from POST /api/planned (server.py:835-838) into update_planned (server.py:879-898).",
+    "OPTIONAL — When _evaluate_planned_transitions sees a scheduled event whose end has already passed at first read (server.py:768-777), it silently marks it 'resolved' with no shares and no emails. Consider either (a) a distinct status like 'missed', or (b) an explicit log line so the missed notification is visible ops-side.",
+    "OPTIONAL — Add a lightweight background scheduler (e.g., asyncio.create_task loop on startup, or a cron) so planned events transition even without a user read; currently transitions are entirely lazy on GET.",
+    "Design nit — /api/planned returns each event including its shares list; make sure the frontend Planned list screen does not accidentally over-render 20+ share cards per event."
+  ],
+  "critical_code_review_comments": [
+    "server.py is at ~1094 lines with the new planned block; still growing. Recommend splitting activation + planned + share into a routers/ package before the next feature.",
+    "_evaluate_planned_transitions logic is correct but subtle: the expiry pass filters status=='active' (line 745), so a scheduled event whose start+end both passed silently gets caught later in the due-loop's inline check (lines 768-777) and skips share creation. This duplicated conditional would be clearer as one unified pass.",
+    "PlannedIn model has profile_ids/contact_ids defaulted to [] and validated in the endpoint. Consider min_length=1 in Pydantic to shift validation into the schema layer and reduce endpoint branching.",
+    "_ensure_utc (server.py:820) helper is used inconsistently — some sites (line 769-772, 788-790) still inline the tzinfo check.",
+    "cancel_planned resolves shares implicitly via _load_share_payload's 'if event.status != active' branch — verified working, but there is no CASCADE cleanup of activation_shares docs on cancel/resolve. Storage grows unboundedly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_planned_handoff.py (new)"
+  ],
+  "success_rate": {"backend": "100% (18/18 new planned tests, 45/45 across full suite)", "frontend": "not tested this iteration (backend-only per request)"},
+  "seed_data_creation": "Each test seeds a TEST_-prefixed user + session directly in Mongo via _seed_user helper. Profiles P1/P2 and one contact (delivered@resend.dev) are created per test via the fixture user_ctx. Full teardown removes users, sessions, profiles, contacts, activation_events and activation_shares by user_id.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New backend test file: /app/backend/tests/test_planned_handoff.py. Run with `pytest backend/tests/ -v` (2 xdist workers configured via pytest.ini). Planned lifecycle is entirely lazy — call any of GET /api/planned, GET /api/events/active, or GET /api/share/{token} to force state transitions. Tests use 1-2s start windows and 4-5s waits; if the environment is very slow, bump the sleeps. delivered@resend.dev is the deliverable test address; email delivery_status ends up 'sent' when the Resend key is live and 'failed' otherwise — both are acceptable and tests only assert the pending->terminal transition.",
+  "rca_of_issue": "N/A — feature works as specified. Only minor hardening suggestions filed under backend_issues.minor."
+}

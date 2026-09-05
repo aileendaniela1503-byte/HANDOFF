@@ -19,6 +19,21 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   other: { icon: "bookmark", label: "Other" },
 };
 
+function formatWindow(startIso: string, endIso: string) {
+  try {
+    const s = new Date(startIso);
+    const e = new Date(endIso);
+    const sameDay = s.toDateString() === e.toDateString();
+    const sd = s.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const st = s.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const ed = e.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const et = e.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return sameDay ? `${sd}, ${st} – ${et}` : `${sd} ${st} → ${ed} ${et}`;
+  } catch {
+    return "";
+  }
+}
+
 export default function Home() {
   const { user } = useAuth();
   const { colors } = useTheme();
@@ -28,6 +43,7 @@ export default function Home() {
 
   const [profiles, setProfiles] = useState<any[]>([]);
   const [activeEvent, setActiveEvent] = useState<any>(null);
+  const [planned, setPlanned] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -35,9 +51,10 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      const [p, e] = await Promise.all([api.listProfiles(), api.activeEvent()]);
+      const [p, e, pl] = await Promise.all([api.listProfiles(), api.activeEvent(), api.listPlanned()]);
       setProfiles(p || []);
       setActiveEvent(e);
+      setPlanned(pl || []);
     } catch (err) {
       console.error(err);
     }
@@ -86,11 +103,44 @@ export default function Home() {
           <Pressable style={styles.activeBanner} onPress={() => router.push("/active-event")} testID="active-event-banner">
             <View style={styles.activeDot} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.activeTitle}>Handoff is active</Text>
+              <Text style={styles.activeTitle}>
+                {activeEvent.event_type === "planned"
+                  ? `Sharing: ${activeEvent.title || "Planned handoff"}`
+                  : "Handoff is active"}
+              </Text>
               <Text style={styles.activeSub}>Tap to view contacts &amp; resolve</Text>
             </View>
             <Feather name="chevron-right" size={20} color={colors.onBrandPrimary} />
           </Pressable>
+        )}
+
+        {planned.filter((e) => e.status === "scheduled").length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Upcoming</Text>
+              <Pressable onPress={() => router.push("/planned/new")} style={styles.addBtn} testID="add-planned-header">
+                <Feather name="plus" size={16} color={colors.brandPrimary} />
+                <Text style={styles.addBtnText}>Plan</Text>
+              </Pressable>
+            </View>
+            {planned.filter((e) => e.status === "scheduled").map((e) => (
+              <Pressable
+                key={e.event_id}
+                style={styles.plannedCard}
+                onPress={() => router.push(`/planned/${e.event_id}`)}
+                testID={`planned-card-${e.event_id}`}
+              >
+                <View style={styles.plannedIcon}><Feather name="calendar" size={20} color={colors.brandPrimary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{e.title || "Planned handoff"}</Text>
+                  <Text style={styles.cardSub}>
+                    {formatWindow(e.scheduled_start_at, e.scheduled_end_at)} · {e.profile_ids?.length || 0} profile{e.profile_ids?.length === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={colors.muted} />
+              </Pressable>
+            ))}
+          </>
         )}
 
         <View style={styles.sectionHeader}>
@@ -151,35 +201,49 @@ export default function Home() {
 
       {/* Sticky Activate CTA */}
       <View style={[styles.activateWrap, { paddingBottom: 16 + insets.bottom }]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.activateBtn,
-            (activeEvent && activeEvent.status === "active") && { backgroundColor: colors.surfaceTertiary },
-            pressed && { opacity: 0.9 },
-          ]}
-          onPress={() => {
-            if (activeEvent && activeEvent.status === "active") {
-              router.push("/active-event");
-            } else {
-              setConfirmVisible(true);
-            }
-          }}
-          testID="activate-button"
-        >
-          <Feather
-            name="alert-circle"
-            size={22}
-            color={activeEvent?.status === "active" ? colors.onSurface : colors.onBrandPrimary}
-          />
-          <Text
-            style={[
-              styles.activateText,
-              activeEvent?.status === "active" && { color: colors.onSurface },
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.plannedCta,
+              pressed && { opacity: 0.85 },
             ]}
+            onPress={() => router.push("/planned/new")}
+            testID="plan-handoff-button"
           >
-            {activeEvent?.status === "active" ? "View active handoff" : "Activate Handoff"}
-          </Text>
-        </Pressable>
+            <Feather name="calendar" size={18} color={colors.brandPrimary} />
+            <Text style={styles.plannedCtaText}>Plan</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.activateBtn,
+              { flex: 1 },
+              (activeEvent && activeEvent.status === "active") && { backgroundColor: colors.surfaceTertiary },
+              pressed && { opacity: 0.9 },
+            ]}
+            onPress={() => {
+              if (activeEvent && activeEvent.status === "active") {
+                router.push("/active-event");
+              } else {
+                setConfirmVisible(true);
+              }
+            }}
+            testID="activate-button"
+          >
+            <Feather
+              name="alert-circle"
+              size={22}
+              color={activeEvent?.status === "active" ? colors.onSurface : colors.onBrandPrimary}
+            />
+            <Text
+              style={[
+                styles.activateText,
+                activeEvent?.status === "active" && { color: colors.onSurface },
+              ]}
+            >
+              {activeEvent?.status === "active" ? "View active handoff" : "Activate now"}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Confirm sheet */}
@@ -274,6 +338,21 @@ const useStyles = makeStyles((colors) => ({
     alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10,
   },
   activateText: { color: colors.onBrandPrimary, fontSize: 18, fontWeight: "700" },
+  plannedCta: {
+    minHeight: 60, borderRadius: 18, paddingHorizontal: 18,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6,
+  },
+  plannedCtaText: { color: colors.brandPrimary, fontSize: 16, fontWeight: "700" },
+  plannedCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: colors.border, marginBottom: 12,
+  },
+  plannedIcon: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: colors.brandTertiary,
+    alignItems: "center", justifyContent: "center",
+  },
   modalBackdrop: {
     flex: 1, backgroundColor: "rgba(26,32,38,0.55)", justifyContent: "flex-end",
   },

@@ -230,11 +230,25 @@ class Contact(ContactIn):
 class ActivationEvent(BaseModel):
     event_id: str
     user_id: str
+    event_type: str = "emergency"  # "emergency" | "planned"
+    title: Optional[str] = None
     triggered_by: str = "self"
     triggered_at: datetime
-    status: str = "active"
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
+    profile_ids: Optional[List[str]] = None  # None => all profiles
+    contact_ids: Optional[List[str]] = None  # None => all contacts
+    status: str = "active"  # "scheduled" | "active" | "resolved" | "cancelled"
     resolved_at: Optional[datetime] = None
     shares: List[dict] = []
+
+
+class PlannedIn(BaseModel):
+    title: str
+    profile_ids: List[str] = []
+    contact_ids: List[str] = []
+    start_at: datetime
+    end_at: datetime
 
 
 # ---------- App ----------
@@ -577,59 +591,8 @@ def _app_share_deep_link(share_token: str) -> str:
     return f"{base.rstrip('/')}/share/{share_token}"
 
 
-@api.post("/activate")
-async def activate(user=Depends(get_current_user)):
-    contacts = await db.contacts.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(20)
-    profiles = await db.profiles.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
-    event_id = f"evt_{uuid.uuid4().hex[:12]}"
-    now = datetime.now(timezone.utc)
-
-    shares = []
-    file_tokens = []
-    # Generate one token per uploaded asset (photo + voice) on each profile so
-    # trusted contacts can fetch them without a login.
-    for p in profiles:
-        if p.get("photo_path"):
-            file_tokens.append(secrets.token_urlsafe(16))
-        if p.get("voice_path"):
-            file_tokens.append(secrets.token_urlsafe(16))
-
-    for c in contacts:
-        share_token = secrets.token_urlsafe(24)
-        share_doc = {
-            "share_token": share_token,
-            "event_id": event_id,
-            "user_id": user["user_id"],
-            "contact_id": c["contact_id"],
-            "contact_name": c["name"],
-            "contact_email": c.get("email"),
-            "delivery_status": "pending",
-            "delivered_at": None,
-            "viewed_at": None,
-            "photo_tokens": file_tokens,
-            "created_at": now,
-        }
-        await db.activation_shares.insert_one(dict(share_doc))
-        shares.append({
-            "share_token": share_token,
-            "contact_id": c["contact_id"],
-            "contact_name": c["name"],
-            "contact_email": c.get("email"),
-            "delivery_status": "pending",
-        })
-
-    event = {
-        "event_id": event_id,
-        "user_id": user["user_id"],
-        "triggered_by": "self",
-        "triggered_at": now,
-        "status": "active",
-        "resolved_at": None,
-        "shares": shares,
-    }
-    await db.activation_events.insert_one(dict(event))
-
-    # Send emails asynchronously
+async def _send_share_emails(event_type: str, user: dict, shares: List[dict], scheduled_end: Optional[datetime] = None):
+    """Send one email per share. Updates each share's delivery_status in place."""
     for s in shares:
         if not s.get("contact_email"):
             await db.activation_shares.update_one(
@@ -639,21 +602,44 @@ async def activate(user=Depends(get_current_user)):
             continue
         try:
             link = _public_share_url(s["share_token"])
-            subject = f"{user.get('name', 'A Handoff user')} has activated their Handoff plan"
             first_name = escape((user.get("name") or "your contact").split(" ")[0])
+            if event_type == "planned":
+                subject = f"{user.get('name', 'A Handoff user')} shared a planned handoff with you"
+                end_txt = ""
+                if scheduled_end:
+                    try:
+                        end_txt = f' It will expire on {scheduled_end.strftime("%B %d, %Y at %H:%M UTC")}.'
+                    except Exception:
+                        end_txt = ""
+                intro = (
+                    f'<p><strong>{escape(user.get("name") or "A Handoff user")}</strong> has set up a scheduled '
+                    f'handoff for you. Open the secure page below to see the care instructions and details '
+                    f'you\u2019ll need for this window.{escape(end_txt)}</p>'
+                )
+                cta = "View Handoff"
+                expire_line = (
+                    f'This link is private. It expires automatically when the handoff window ends'
+                    f'{" or when " + first_name + " cancels it." if not scheduled_end else "."}'
+                )
+            else:
+                subject = f"{user.get('name', 'A Handoff user')} has activated their Handoff plan"
+                intro = (
+                    f'<p><strong>{escape(user.get("name") or "A Handoff user")}</strong> has activated their '
+                    f'Handoff plan and named you as a trusted contact. Please open the secure page below to '
+                    f'view exactly what they need help with right now.</p>'
+                )
+                cta = "View Handoff Page"
+                expire_line = f"This link is private. It expires once {first_name} marks the situation resolved."
             html = (
                 f'<table role="presentation" width="100%" style="font-family:Arial,sans-serif">'
                 f'<tr><td style="padding:24px">'
-                f'<h2 style="color:#26303B;margin:0 0 8px">Handoff — Action Needed</h2>'
+                f'<h2 style="color:#26303B;margin:0 0 8px">Handoff</h2>'
                 f'<p>Hi {escape(s["contact_name"])},</p>'
-                f'<p><strong>{escape(user.get("name") or "A Handoff user")}</strong> has activated their '
-                f'Handoff plan and named you as a trusted contact. Please open the secure page below to '
-                f'view exactly what they need help with right now.</p>'
+                f'{intro}'
                 f'<p style="margin:24px 0"><a href="{link}" '
                 f'style="background:#2C63A0;color:#ffffff;padding:14px 22px;text-decoration:none;'
-                f'border-radius:12px;font-weight:600">View Handoff Page</a></p>'
-                f'<p style="color:#69747F;font-size:13px">This link is private. It expires once '
-                f'{first_name} marks the situation resolved.</p>'
+                f'border-radius:12px;font-weight:600">{cta}</a></p>'
+                f'<p style="color:#69747F;font-size:13px">{escape(expire_line)}</p>'
                 f'<p style="color:#69747F;font-size:12px;margin-top:32px">Sent by {escape(EMAIL_FROM_NAME)}. '
                 f'We never ask for your password or card details by email.</p>'
                 f'</td></tr></table>'
@@ -671,13 +657,143 @@ async def activate(user=Depends(get_current_user)):
                 {"$set": {"delivery_status": "failed"}},
             )
 
+
+async def _create_shares_for_event(
+    *, event_id: str, user_id: str, contacts: List[dict], profiles: List[dict],
+    profile_ids: Optional[List[str]], now: datetime,
+) -> List[dict]:
+    """Create one share doc per contact. `profile_ids` scopes which profiles are exposed;
+    None means all. File tokens cover only the scoped profiles."""
+    scoped = profiles if not profile_ids else [p for p in profiles if p["profile_id"] in profile_ids]
+    file_tokens: List[str] = []
+    for p in scoped:
+        if p.get("photo_path"):
+            file_tokens.append(secrets.token_urlsafe(16))
+        if p.get("voice_path"):
+            file_tokens.append(secrets.token_urlsafe(16))
+
+    shares: List[dict] = []
+    for c in contacts:
+        share_token = secrets.token_urlsafe(24)
+        share_doc = {
+            "share_token": share_token,
+            "event_id": event_id,
+            "user_id": user_id,
+            "contact_id": c["contact_id"],
+            "contact_name": c["name"],
+            "contact_email": c.get("email"),
+            "delivery_status": "pending",
+            "delivered_at": None,
+            "viewed_at": None,
+            "photo_tokens": file_tokens,
+            "profile_ids": profile_ids,  # None means all
+            "created_at": now,
+        }
+        await db.activation_shares.insert_one(dict(share_doc))
+        shares.append({
+            "share_token": share_token,
+            "contact_id": c["contact_id"],
+            "contact_name": c["name"],
+            "contact_email": c.get("email"),
+            "delivery_status": "pending",
+        })
+    return shares
+
+
+@api.post("/activate")
+async def activate(user=Depends(get_current_user)):
+    contacts = await db.contacts.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(20)
+    profiles = await db.profiles.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+
+    shares = await _create_shares_for_event(
+        event_id=event_id, user_id=user["user_id"], contacts=contacts, profiles=profiles,
+        profile_ids=None, now=now,
+    )
+
+    event = {
+        "event_id": event_id,
+        "user_id": user["user_id"],
+        "event_type": "emergency",
+        "title": None,
+        "triggered_by": "self",
+        "triggered_at": now,
+        "scheduled_start_at": None,
+        "scheduled_end_at": None,
+        "profile_ids": None,
+        "contact_ids": None,
+        "status": "active",
+        "resolved_at": None,
+    }
+    await db.activation_events.insert_one(dict(event))
+
+    await _send_share_emails("emergency", user, shares, None)
+
     ev = await db.activation_events.find_one({"event_id": event_id}, {"_id": 0})
     ev["shares"] = await db.activation_shares.find({"event_id": event_id}, {"_id": 0, "photo_tokens": 0}).to_list(50)
     return ev
 
 
+async def _evaluate_planned_transitions(user_id: str):
+    """Promote scheduled -> active (and send emails) and active -> resolved based on time.
+    Runs on every user-scoped read that cares about active status."""
+    now = datetime.now(timezone.utc)
+
+    # 1. Auto-expire planned events whose end has passed
+    expired = await db.activation_events.find(
+        {"user_id": user_id, "event_type": "planned", "status": "active",
+         "scheduled_end_at": {"$ne": None, "$lte": now}},
+        {"_id": 0},
+    ).to_list(50)
+    for ev in expired:
+        await db.activation_events.update_one(
+            {"event_id": ev["event_id"], "status": "active"},
+            {"$set": {"status": "resolved", "resolved_at": now}},
+        )
+
+    # 2. Auto-activate planned events whose start has arrived
+    due = await db.activation_events.find(
+        {"user_id": user_id, "event_type": "planned", "status": "scheduled",
+         "scheduled_start_at": {"$lte": now}},
+        {"_id": 0},
+    ).to_list(50)
+    if not due:
+        return
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    all_contacts = await db.contacts.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    all_profiles = await db.profiles.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
+
+    for ev in due:
+        # Skip if already past its own end
+        if ev.get("scheduled_end_at") and ev["scheduled_end_at"].replace(tzinfo=timezone.utc) if ev["scheduled_end_at"].tzinfo is None else ev["scheduled_end_at"]:
+            end = ev["scheduled_end_at"]
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            if end <= now:
+                await db.activation_events.update_one(
+                    {"event_id": ev["event_id"]}, {"$set": {"status": "resolved", "resolved_at": now}}
+                )
+                continue
+
+        contact_ids = ev.get("contact_ids") or []
+        contacts = [c for c in all_contacts if c["contact_id"] in contact_ids] if contact_ids else all_contacts
+        shares = await _create_shares_for_event(
+            event_id=ev["event_id"], user_id=user_id, contacts=contacts, profiles=all_profiles,
+            profile_ids=ev.get("profile_ids"), now=now,
+        )
+        await db.activation_events.update_one(
+            {"event_id": ev["event_id"]}, {"$set": {"status": "active", "triggered_at": now}}
+        )
+        end_dt = ev.get("scheduled_end_at")
+        if end_dt is not None and end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        await _send_share_emails("planned", user, shares, end_dt)
+
+
 @api.get("/events/active")
 async def get_active_event(user=Depends(get_current_user)):
+    await _evaluate_planned_transitions(user["user_id"])
     ev = await db.activation_events.find_one(
         {"user_id": user["user_id"], "status": "active"}, {"_id": 0}, sort=[("triggered_at", -1)]
     )
@@ -690,7 +806,7 @@ async def get_active_event(user=Depends(get_current_user)):
 @api.post("/events/{event_id}/resolve")
 async def resolve_event(event_id: str, user=Depends(get_current_user)):
     result = await db.activation_events.update_one(
-        {"event_id": event_id, "user_id": user["user_id"], "status": "active"},
+        {"event_id": event_id, "user_id": user["user_id"], "status": {"$in": ["active", "scheduled"]}},
         {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc)}},
     )
     if result.matched_count == 0:
@@ -700,11 +816,116 @@ async def resolve_event(event_id: str, user=Depends(get_current_user)):
     return ev
 
 
+# ---------- Planned Handoffs ----------
+def _ensure_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+@api.post("/planned")
+async def create_planned(body: PlannedIn, user=Depends(get_current_user)):
+    start = _ensure_utc(body.start_at)
+    end = _ensure_utc(body.end_at)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+    if not body.contact_ids:
+        raise HTTPException(status_code=400, detail="Pick at least one contact")
+    if not body.profile_ids:
+        raise HTTPException(status_code=400, detail="Pick at least one profile")
+    # sanity: contacts + profiles belong to user
+    valid_contacts = await db.contacts.count_documents({"user_id": user["user_id"], "contact_id": {"$in": body.contact_ids}})
+    valid_profiles = await db.profiles.count_documents({"user_id": user["user_id"], "profile_id": {"$in": body.profile_ids}})
+    if valid_contacts != len(body.contact_ids) or valid_profiles != len(body.profile_ids):
+        raise HTTPException(status_code=400, detail="Unknown contact or profile")
+
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    event = {
+        "event_id": event_id,
+        "user_id": user["user_id"],
+        "event_type": "planned",
+        "title": body.title.strip(),
+        "triggered_by": "self",
+        "triggered_at": now,
+        "scheduled_start_at": start,
+        "scheduled_end_at": end,
+        "profile_ids": body.profile_ids,
+        "contact_ids": body.contact_ids,
+        "status": "scheduled",
+        "resolved_at": None,
+    }
+    await db.activation_events.insert_one(dict(event))
+    # If start is already in the past, activate right away
+    await _evaluate_planned_transitions(user["user_id"])
+    ev = await db.activation_events.find_one({"event_id": event_id}, {"_id": 0})
+    ev["shares"] = await db.activation_shares.find({"event_id": event_id}, {"_id": 0, "photo_tokens": 0}).to_list(50)
+    return ev
+
+
+@api.get("/planned")
+async def list_planned(user=Depends(get_current_user)):
+    await _evaluate_planned_transitions(user["user_id"])
+    docs = await db.activation_events.find(
+        {"user_id": user["user_id"], "event_type": "planned",
+         "status": {"$in": ["scheduled", "active"]}},
+        {"_id": 0},
+    ).sort("scheduled_start_at", 1).to_list(50)
+    for d in docs:
+        d["shares"] = await db.activation_shares.find(
+            {"event_id": d["event_id"]}, {"_id": 0, "photo_tokens": 0}
+        ).to_list(20)
+    return docs
+
+
+@api.put("/planned/{event_id}")
+async def update_planned(event_id: str, body: PlannedIn, user=Depends(get_current_user)):
+    start = _ensure_utc(body.start_at)
+    end = _ensure_utc(body.end_at)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+    if not body.contact_ids:
+        raise HTTPException(status_code=400, detail="Pick at least one contact")
+    if not body.profile_ids:
+        raise HTTPException(status_code=400, detail="Pick at least one profile")
+    valid_contacts = await db.contacts.count_documents({"user_id": user["user_id"], "contact_id": {"$in": body.contact_ids}})
+    valid_profiles = await db.profiles.count_documents({"user_id": user["user_id"], "profile_id": {"$in": body.profile_ids}})
+    if valid_contacts != len(body.contact_ids) or valid_profiles != len(body.profile_ids):
+        raise HTTPException(status_code=400, detail="Unknown contact or profile")
+    result = await db.activation_events.update_one(
+        {"event_id": event_id, "user_id": user["user_id"], "event_type": "planned", "status": "scheduled"},
+        {"$set": {
+            "title": body.title.strip(),
+            "scheduled_start_at": start,
+            "scheduled_end_at": end,
+            "profile_ids": body.profile_ids,
+            "contact_ids": body.contact_ids,
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Planned handoff not found or already started")
+    ev = await db.activation_events.find_one({"event_id": event_id}, {"_id": 0})
+    return ev
+
+
+@api.delete("/planned/{event_id}")
+async def cancel_planned(event_id: str, user=Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    result = await db.activation_events.update_one(
+        {"event_id": event_id, "user_id": user["user_id"], "event_type": "planned",
+         "status": {"$in": ["scheduled", "active"]}},
+        {"$set": {"status": "cancelled", "resolved_at": now}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Planned handoff not found")
+    return {"ok": True}
+
+
 # ---------- Public Share (no auth) ----------
 async def _load_share_payload(share_token: str) -> Optional[dict]:
     share = await db.activation_shares.find_one({"share_token": share_token}, {"_id": 0})
     if not share:
         return None
+    # Ensure planned-mode transitions have been applied so that "active" is truthful
+    await _evaluate_planned_transitions(share["user_id"])
     event = await db.activation_events.find_one({"event_id": share["event_id"]}, {"_id": 0})
     if not event:
         return None
@@ -712,6 +933,9 @@ async def _load_share_payload(share_token: str) -> Optional[dict]:
         return {"expired": True, "share": share, "event": event}
     owner = await db.users.find_one({"user_id": event["user_id"]}, {"_id": 0})
     profiles = await db.profiles.find({"user_id": event["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    scope = share.get("profile_ids")
+    if scope:
+        profiles = [p for p in profiles if p["profile_id"] in scope]
     contacts = await db.contacts.find({"user_id": event["user_id"]}, {"_id": 0}).sort("notify_order", 1).to_list(20)
     # mark viewed
     if not share.get("viewed_at"):
@@ -742,6 +966,9 @@ async def _load_share_payload(share_token: str) -> Optional[dict]:
             p["voice_url"] = f"/api/files/{p['voice_path']}?token={tok}" if tok else None
     return {
         "expired": False,
+        "event_type": event.get("event_type", "emergency"),
+        "title": event.get("title"),
+        "scheduled_end_at": event["scheduled_end_at"].isoformat() if event.get("scheduled_end_at") else None,
         "owner_name": owner.get("name") if owner else "A friend",
         "contact_name": share.get("contact_name"),
         "profiles": profiles,

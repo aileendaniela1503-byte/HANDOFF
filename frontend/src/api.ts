@@ -84,6 +84,11 @@ export const api = {
   activeEvent: () => request("/events/active"),
   resolveEvent: (id: string) => request(`/events/${id}/resolve`, { method: "POST" }),
 
+  listPlanned: () => request("/planned"),
+  createPlanned: (body: any) => request("/planned", { method: "POST", body: JSON.stringify(body) }),
+  updatePlanned: (id: string, body: any) => request(`/planned/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  cancelPlanned: (id: string) => request(`/planned/${id}`, { method: "DELETE" }),
+
   share: (token: string) => request(`/share/${token}`, {}, false),
   upgrade: (tier: string) => {
     const form = new FormData();

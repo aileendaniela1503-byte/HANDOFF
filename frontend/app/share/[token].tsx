@@ -113,11 +113,23 @@ export default function ShareView() {
     <View style={[{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }]} testID="share-view-screen">
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 + insets.bottom }}>
         <View style={styles.hero}>
-          <Text style={styles.heroKicker}>Handoff — Active</Text>
+          <Text style={styles.heroKicker}>
+            {payload.event_type === "planned"
+              ? (payload.title ? `Handoff · ${payload.title}` : "Planned handoff")
+              : "Handoff — Active"}
+          </Text>
           <Text style={styles.heroTitle}>Hi {payload.contact_name || "friend"},</Text>
           <Text style={styles.heroBody}>
-            <Text style={{ fontWeight: "700" }}>{payload.owner_name}</Text> needs your help. Below is exactly what to do.
+            <Text style={{ fontWeight: "700" }}>{payload.owner_name}</Text>
+            {payload.event_type === "planned"
+              ? " shared their handoff with you. Everything you need is below."
+              : " needs your help. Below is exactly what to do."}
           </Text>
+          {payload.event_type === "planned" && payload.scheduled_end_at ? (
+            <Text style={[styles.heroBody, { opacity: 0.85, fontSize: 13, marginTop: 8 }]}>
+              This link expires automatically on {new Date(payload.scheduled_end_at).toLocaleString()}.
+            </Text>
+          ) : null}
         </View>
 
         {payload.profiles?.length ? payload.profiles.map((p: any) => (

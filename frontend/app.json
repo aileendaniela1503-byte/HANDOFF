@@ -22,7 +22,10 @@
         "backgroundColor": "#000000"
       },
       "package": "com.emergent.trustedbackup.ihui81",
-      "permissions": ["RECORD_AUDIO", "READ_MEDIA_IMAGES"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -46,7 +49,8 @@
       "expo-web-browser",
       "expo-status-bar",
       "@react-native-vector-icons/feather",
-      "expo-audio"
+      "expo-audio",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

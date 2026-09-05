@@ -72,8 +72,15 @@ export default function ActiveEvent() {
         <View style={styles.banner}>
           <View style={styles.pulse} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.bannerTitle}>Your plan is active</Text>
+            <Text style={styles.bannerTitle}>
+              {event.event_type === "planned"
+                ? (event.title || "Planned handoff") + " is active"
+                : "Your plan is active"}
+            </Text>
             <Text style={styles.bannerSub}>Started {triggered.toLocaleString()}</Text>
+            {event.event_type === "planned" && event.scheduled_end_at ? (
+              <Text style={styles.bannerSub}>Auto-expires {new Date(event.scheduled_end_at).toLocaleString()}</Text>
+            ) : null}
           </View>
         </View>
 
