@@ -1,0 +1,50 @@
+{
+  "summary": "Handoff app tested end-to-end. Backend: 16/16 pytest tests pass — auth (invalid session_id 401, bearer 401/200), profiles CRUD, contacts CRUD (incl. email-or-phone validation), full activation flow (create event/share, delivery_status recorded, JSON /api/share/{token} returns owner/contact/profiles/contacts, resolve moves status to resolved, subsequent /api/share/{token} returns {expired: true}), /api/subscription/upgrade updates user.subscription_tier and is validated (invalid tier → 400), DELETE /api/account cascades and invalidates the session token. Frontend: login screen renders with testID=login-google-button (56px, tappable) and public /share/{token} in Expo web renders ShareView (testID=share-view-screen) with owner_name, contact_name, profile name+care_instructions, and other trusted contacts. IMPORTANT ROUTING FINDING: the backend defines a plain-HTML public page at GET /share/{token} (server.py:675), but the k8s ingress only routes /api/* to the backend, so public /share/{token} is served by the Expo frontend instead. The Expo SPA route /share/[token] does render the same content via the public /api/share/{token} JSON endpoint, so the product feature works end-to-end for anyone with a modern browser. But the requirement of a 'plain web page (no login/no JS)' via /share/{token} is NOT satisfied at the public URL — non-JS clients or crawlers will only get the Expo shell. Recommend either (a) adding an ingress rule to route /share/* to backend, or (b) exposing the HTML page under /api/share/{token}/page (already implemented in server.py:674) and pointing emails at that URL.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /share/{token}", "issue": "Public URL routes /share/* to Expo frontend, not backend — server-side HTML page (server.py:675) is unreachable externally. Email link built by _public_share_url points to /api/share/{token} (JSON), not the HTML page, so recipients receive a JSON blob when opening the email link.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/session", "issue": "_SEEN_SESSION_IDS is an in-memory set — session-id replay protection is not persistent and does not survive restarts / multi-instance deploys."},
+      {"endpoint": "POST /api/activate", "issue": "Emails are sent inline inside the request; large contact lists will slow the response. Consider background task."},
+      {"endpoint": "GET /api/share/{token}", "issue": "photo_url attaches only the first share.photo_tokens[0] for every profile — if there are N profiles with photos, only the first token is usable."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Email link → recipient opens URL", "issue": "_public_share_url returns /api/share/{token} which returns JSON (not HTML). Users clicking the email link will see raw JSON. Should point to the frontend /share/{token} SPA route or to /api/share/{token}/page.", "affected_testIDs": ["share-view-screen"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_handoff_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix email link: change _public_share_url in server.py:503 to return the frontend SPA URL (/share/{token}) OR the backend HTML page (/api/share/{token}/page) — currently it returns the JSON endpoint, so email recipients see raw JSON.",
+    "Optional: add ingress routing for /share/* to backend so the plain-HTML fallback page (server.py:675) is reachable at the public URL for no-JS clients.",
+    "Fix share JSON: attach a per-profile photo_token instead of always using photo_tokens[0] (server.py:653).",
+    "Persist _SEEN_SESSION_IDS in Mongo (or drop it — session_token uniqueness already blocks re-use)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 776 lines — approaching the 700-line split threshold; consider splitting into routers (auth/profiles/contacts/activation/share/subscription).",
+    "activation emails are sent synchronously inside the request handler — noticeable latency for larger contact lists.",
+    "MongoDB _id is properly excluded via projections everywhere — good.",
+    "All endpoints depend on get_current_user for authz — good.",
+    "photo_tokens is stored per share doc but only tokens[0] is referenced when building signed photo URLs; the loop looks buggy for multi-photo profiles."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_handoff_backend.py (new)",
+    "/app/backend/tests/__init__.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (login + public share view render as expected)"},
+  "seed_data_creation": "Fixture-based: creates TEST_ prefixed users/sessions/profiles/contacts/events/shares in Mongo and cleans them up. A one-off share (share_TEST_adde22ffb...) was seeded for the frontend /share/{token} test and cleaned up afterward.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file at /app/backend/tests/test_handoff_backend.py seeds sessions directly in Mongo (see conftest.py). Uses EXPO_PUBLIC_BACKEND_URL. Public /share/{token} at the k8s edge is served by Expo (SPA route). Backend HTML fallback at server.py:675 only works on localhost:8001 or if ingress is updated. Emails currently link to /api/share/{token} JSON endpoint — needs fix.",
+  "rca_of_issue": "The Kubernetes ingress rule forwards only paths prefixed with /api to the FastAPI backend on port 8001. Everything else (including /share/{token}) is routed to the Expo web preview on port 3000. server.py defines both @app.get('/share/{share_token}') and @app.get('/api/share/{share_token}/page'), but only the /api one is reachable externally. Additionally, _public_share_url (used to build the email 'View Handoff Page' link) returns f'{base}/api/share/{share_token}' which is the JSON endpoint, so email recipients open a raw JSON response instead of the HTML page. Mitigation: change _public_share_url to return either f'{base}/share/{share_token}' (Expo SPA — works for browsers with JS) or f'{base}/api/share/{share_token}/page' (backend HTML — works without JS)."
+}

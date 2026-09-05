@@ -1,0 +1,187 @@
+{
+  "app_name": "Handoff \u2014 Emergency Life Continuity",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A calm, modest, and trustworthy utility that provides peace of mind, feeling more like a caring insurance assistant than a noisy tech product.",
+  "color": {
+    "surface": "#FAFAF7",
+    "onSurface": "#1A2026",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A2026",
+    "surfaceTertiary": "#F2F2EE",
+    "onSurfaceTertiary": "#434B54",
+    "surfaceInverse": "#26303B",
+    "onSurfaceInverse": "#F7F8F9",
+    "brand": "#647A8F",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#2C63A0",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#DCE3EB",
+    "onBrandSecondary": "#2C4053",
+    "brandTertiary": "#ECF1F5",
+    "onBrandTertiary": "#374C60",
+    "success": "#2D684A",
+    "onSuccess": "#FFFFFF",
+    "warning": "#966217",
+    "onWarning": "#FFFFFF",
+    "error": "#9E3C3C",
+    "onError": "#FFFFFF",
+    "info": "#4A6C8C",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E6E0",
+    "borderStrong": "#B4B8B2",
+    "divider": "#E5E6E0",
+    "muted": "#69747F"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 14,
+      "base": 16,
+      "lg": 18,
+      "xl": 22,
+      "2xl": 28
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical whitespace and comfortable reading rhythms. Avoid dense dashboard aesthetics. Use generous padding for touch targets (minimum 44x44, oversized for Activate).",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use for sticky bottom 'Activate' action containers",
+      "Use for bottom tab bar and modal headers",
+      "Use for floating Action Buttons or bottom sheet handles"
+    ],
+    "dont's": [
+      "Never use on form fields or basic list rows",
+      "Avoid heavy blur that makes text unreadable"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth",
+      "purpose": "Google sign-in and optional biometric lock.",
+      "states": {
+        "loading": "Centered soft spinner",
+        "empty": "N/A",
+        "error": "Readable inline error message"
+      },
+      "layout": "Hero graphic with a calm off-white/blue abstract background. Large, easy-to-read welcome text. Primary button for Google Sign-in at the bottom."
+    },
+    {
+      "name": "Home",
+      "purpose": "Dashboard listing handoff profiles and a prominent Activate Handoff button.",
+      "states": {
+        "loading": "Skeleton loader for profile cards",
+        "empty": "Calm illustration of a safe space, text prompting to create the first profile.",
+        "error": "Error message with a retry button"
+      },
+      "layout": "Welcome greeting at the top. List of flat, pale profile cards (Pet, Home, etc.). A sticky, oversized 'Activate Handoff' primary button anchored at the bottom using brandPrimary color."
+    },
+    {
+      "name": "ProfileDetail",
+      "purpose": "Add or edit a specific handoff profile type with care instructions and photos.",
+      "states": {
+        "loading": "Spinner overlay when saving",
+        "empty": "N/A",
+        "error": "Validation errors below respective inputs"
+      },
+      "layout": "Single-column form. Labels above inputs. Clean, separated sections for instructions and photo upload. Sticky 'Save Profile' CTA at the bottom."
+    },
+    {
+      "name": "TrustedContacts",
+      "purpose": "Manage trusted contacts and their notification priority.",
+      "states": {
+        "loading": "Skeleton rows",
+        "empty": "Illustration of a handshake/connection, prompting to add a trusted contact.",
+        "error": "Error fetching contacts with retry action."
+      },
+      "layout": "List of contacts with avatar (initials or photo). Priority ordering indicated gently. Floating Action Button or sticky bottom CTA to add a new contact."
+    },
+    {
+      "name": "ActivationFlow",
+      "purpose": "Confirm activation, show countdown to undo, and display active status.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "Failed to activate warning with retry."
+      },
+      "layout": "Bottom sheet confirming activation. Once confirmed, full-screen countdown (large typography). Then transitions to Active Event screen showing notified contacts."
+    },
+    {
+      "name": "ShareView",
+      "purpose": "Read-only view for trusted contacts accessed via link.",
+      "states": {
+        "loading": "Skeleton loader for the shared information",
+        "empty": "N/A",
+        "error": "Link invalid or expired message."
+      },
+      "layout": "Clean, web-like reading experience. Generous line-height, large text, clear section dividers. No complex navigation, pure utility."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Manage account, privacy, data deletion, and subscriptions.",
+      "states": {
+        "loading": "Spinner on specific actions",
+        "empty": "N/A",
+        "error": "Error fetching account details."
+      },
+      "layout": "List of settings options with tinted Phosphor icons. Clear, separated section for Subscription Tier UI with mocked upgrade. 'Sign Out' and 'Delete Data' clearly marked."
+    }
+  ],
+  "images": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1645811791231-279658fb46dc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxzb2Z0JTIwYmx1ZSUyMGdyYWRpZW50JTIwdGV4dHVyZXxlbnwwfHx8fDE3ODg2NDMzMDV8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Soft abstract blue gradient background"
+    },
+    "empty_state_home": {
+      "url": "https://images.unsplash.com/photo-1609510487268-a6512dc74d00?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxjYWxtJTIwbmF0dXJhbCUyMGVtcHR5JTIwcm9vbSUyMG9mZiUyMHdoaXRlfGVufDB8fHx8MTc4ODY0MzMwMHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Calm natural room representing a peaceful home"
+    },
+    "empty_state_contacts": {
+      "url": "https://images.unsplash.com/photo-1766400933342-c94814d957ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxjYWxtJTIwcGVhY2VmdWwlMjBuYXR1cmFsJTIwc2NlbmVzJTIwb2ZmJTIwd2hpdGUlMjBibHVlfGVufDB8fHx8MTc4ODY0MzMwMHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Peaceful white buildings with palm trees"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Follow 1 iOS-Native Clean layout principles: generous padding, readable text, calm and non-intrusive elements.",
+    "Implement the custom color palette strictly. Use 'brandPrimary' (#2C63A0) exclusively for the oversized Activate button and major CTAs to make them stand out against the calm 'brand' and 'surface' colors.",
+    "Ensure the base font size is larger than default (16pt base) to meet accessibility and legibility goals for stressful moments.",
+    "Do not use color alone to convey status; always pair with an icon and text (e.g., success green + check icon + 'Delivered').",
+    "The 'Activate' button on the Home screen must be sticky at the bottom and significantly larger (e.g., min height 56-64pt) than standard buttons.",
+    "Avoid any flashy or gamified elements. The app must feel like a quiet, trustworthy insurance or health assistant.",
+    "Support Dynamic Type and reduced motion where applicable (e.g., minimal bouncing, prefer simple crossfades or slide-ups).",
+    "Use Phosphor icons with consistent weight (preferably outlined or filled consistently per screen) and simple rounded shapes.",
+    "For avatars, use real photos when available; fallback to initials inside a solid 'brandTertiary' background container.",
+    "Apply 'expo-glass-effect' for the sticky Activate container background to ensure it stands out while maintaining the calm aesthetic, if it scrolls over content."
+  ]
+}
