@@ -9,14 +9,20 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.trustedbackup.ihui81"
+      "bundleIdentifier": "com.emergent.trustedbackup.ihui81",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Add photos to your handoff profiles",
+        "NSMicrophoneUsageDescription": "Record a voice message for trusted contacts",
+        "NSCameraUsageDescription": "Take a photo for your handoff profile"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.trustedbackup.ihui81"
+      "package": "com.emergent.trustedbackup.ihui81",
+      "permissions": ["RECORD_AUDIO", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",
@@ -39,7 +45,8 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-status-bar",
-      "@react-native-vector-icons/feather"
+      "@react-native-vector-icons/feather",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

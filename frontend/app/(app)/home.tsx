@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
 
 import { useAuth } from "@/src/auth-context";
-import { api, fileUrl } from "@/src/api";
+import { api, fileUrl, getAuthToken } from "@/src/api";
 import { useTheme, makeStyles } from "@/src/theme";
 import { Image } from "expo-image";
+import { IllustrationHands, TextureBackground } from "@/src/illustrations";
 
 const TYPE_META: Record<string, { icon: string; label: string }> = {
   pet: { icon: "github", label: "Pet" },
@@ -70,6 +71,7 @@ export default function Home() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]} testID="home-screen">
+      <TextureBackground />
       {/* Sticky header */}
       <View style={styles.header}>
         <Text style={styles.hello}>Hello{firstName ? `, ${firstName}` : ""}</Text>
@@ -103,7 +105,7 @@ export default function Home() {
           <View style={{ paddingVertical: 40 }}><ActivityIndicator color={colors.brandPrimary} /></View>
         ) : profiles.length === 0 ? (
           <View style={styles.empty}>
-            <View style={styles.emptyIcon}><Feather name="clipboard" size={26} color={colors.brandPrimary} /></View>
+            <IllustrationHands size={140} />
             <Text style={styles.emptyTitle}>Nothing to hand off yet</Text>
             <Text style={styles.emptyText}>
               Add a pet, dependent, medication, plant, or home note — anything someone would need to step in.
@@ -124,7 +126,7 @@ export default function Home() {
               >
                 {p.photo_path ? (
                   <Image
-                    source={{ uri: fileUrl(p.photo_path), headers: { Authorization: `Bearer ${require("@/src/api").getAuthToken()}` } }}
+                    source={{ uri: fileUrl(p.photo_path), headers: { Authorization: `Bearer ${getAuthToken()}` } }}
                     style={styles.photo}
                     contentFit="cover"
                   />
@@ -184,8 +186,8 @@ export default function Home() {
       <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard} testID="activate-confirm-sheet">
-            <View style={styles.modalIcon}>
-              <Feather name="alert-triangle" size={26} color={colors.warning} />
+            <View style={styles.modalIllo}>
+              <IllustrationHands size={120} />
             </View>
             <Text style={styles.modalTitle}>Activate your handoff plan?</Text>
             <Text style={styles.modalBody}>
@@ -279,10 +281,7 @@ const useStyles = makeStyles((colors) => ({
     backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 32,
   },
-  modalIcon: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: "#FBEFD9",
-    alignItems: "center", justifyContent: "center", marginBottom: 12,
-  },
+  modalIllo: { alignItems: "center", marginBottom: 8 },
   modalTitle: { fontSize: 20, fontWeight: "700", color: colors.onSurface },
   modalBody: { fontSize: 15, color: colors.onSurfaceTertiary, lineHeight: 22, marginTop: 8 },
   modalConfirm: {

@@ -1,0 +1,45 @@
+{
+  "summary": "Handoff — voice-message + tier-quota backend features tested. 11 new pytest tests written (test_voice_features.py) covering: GET /api/quota (free/plus/family), POST /api/upload/audio (auth + returns path), free-tier voice cap (1st allowed, 2nd → 402), upgrade-to-plus unlocks unlimited voice, PUT with voice_path=null not blocked, PUT keeping voice on same profile not blocked, and full activation flow with two voice profiles (share JSON exposes DISTINCT per-profile voice_urls with different file_tokens, /api/files signed access works with valid token / 403 with wrong or missing token, /api/share/{token}/page HTML contains 2 <audio ... autoplay> tags referencing each voice_path). All 11 new tests + all 16 previously-passing tests → 27/27 passing. No regressions. Behavior of per-profile voice_url signing is correct — the bug from iteration_1 (photo_tokens[0] shared across profiles) has already been fixed in server.py:723-742 which now indexes photo_tokens per (photo, voice) slot per profile.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/share/{token}", "issue": "activate() reads profiles without sort but _load_share_payload sorts by created_at when mapping photo_tokens[] to profiles. Since token order was generated in the (unsorted) activate() loop and consumed in a sorted loop, mapping can misalign for users with many profiles inserted out of created_at order. Tests currently pass because insert order == created_at order, but this is a latent bug."},
+      {"endpoint": "GET /api/files/{path}", "issue": "Any file_token in share.photo_tokens grants access to ANY file owned by the event user (not scoped per-file). A voice token can open any photo/audio the sender has. Not a security break (still same activation event, same owner), but not per-file bound as the URLs' distinct tokens suggest."},
+      {"endpoint": "POST /api/upload/audio", "issue": "No max file size / rate limit — a malicious authenticated user can upload arbitrarily large audio blobs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_voice_features.py",
+    "/app/backend/tests/test_handoff_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/voice_features.xml"
+  ],
+  "action_items": [
+    "Optional: in activate() (server.py:582-596), sort profiles by created_at before generating photo_tokens so the same order is used when consumed in _load_share_payload (server.py:714+). Otherwise the token→file mapping can misalign for users whose Mongo insertion order diverges from created_at order.",
+    "Optional: scope file_tokens per specific path (dict of {path: token}) instead of a flat list, so a voice token cannot fetch photos and vice-versa.",
+    "Optional: add file-size limit + content-type validation on /api/upload/audio."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew from 776 → 875 lines with the new endpoints; still approaching the 700-line split threshold. Consider extracting voice/quota/share into routers.",
+    "_voice_allowed_for cleverly returns a coroutine-factory only when a check is needed (skips DB call for paid tiers) — good.",
+    "PUT /api/profiles/{id} correctly passes existing_profile_id so updating the SAME voice profile doesn't self-block on free tier — verified by test.",
+    "PUT with voice_path=null is skipped from the tier check because the guard is `if body.voice_path:` (falsy check) — verified.",
+    "HTML page correctly uses preload='auto' + autoplay + <source> tag for each profile with voice_url."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_voice_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (27/27 across both test files)", "frontend": "not re-tested this iteration (per request)"},
+  "seed_data_creation": "Each test class seeds its own TEST_-prefixed user + session directly in Mongo (via helpers _seed_user/_cleanup_user) and cleans up on teardown. Real audio bytes are uploaded to object storage (small fake m4a blobs).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New test file /app/backend/tests/test_voice_features.py; run with `pytest backend/tests/ -v`. It uses shared fixtures from conftest.py (base_url, mongo, seeded_user, auth_session). Voice quota gate lives in server.py `_voice_allowed_for` + `FREE_TIER_VOICE_LIMIT=1`. Signed voice URLs are minted per (photo,voice) slot in `_load_share_payload` (server.py:723-742) and validated by `/api/files/{path:path}` which checks share.photo_tokens membership.",
+  "rca_of_issue": "N/A — all requested features work as specified."
+}

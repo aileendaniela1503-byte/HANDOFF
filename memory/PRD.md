@@ -5,16 +5,18 @@ For the moment you can't be there. Users quietly build a private "handoff profil
 
 ## MVP scope (this build)
 - **Auth**: Emergent Google sign-in. New users are upserted by email.
-- **Profiles**: Six types (pet, dependent, medication, plant, home, other) with a name, freeform care instructions, and an optional photo (Emergent Object Storage).
+- **Profiles**: Six types (pet, dependent, medication, plant, home, other) with a name, freeform care instructions, optional photo (Emergent Object Storage), and optional **voice message** (recorded in-app via `expo-audio`, autoplays on the trusted contact's share page).
+- **Voice tier gating**: Free tier gets voice on **1 profile**; Handoff Plus / Family: unlimited. Enforced server-side via `/api/quota` and 402 on write.
 - **Trusted contacts**: Name, email/phone, relationship, notify order.
 - **Activation flow**:
-  - Confirmation sheet with a clear "Yes, activate now" action.
-  - Backend generates a unique unguessable share token per contact.
-  - Each contact is emailed via Emergent Resend with a link to a plain HTML page that works without an app or login.
+  - Confirmation sheet with a warm hands illustration and a clear "Yes, activate now" action.
+  - Backend generates a unique unguessable share token per contact plus per-file signed tokens for photos and voice.
+  - Each contact is emailed via Emergent Resend with a link to a plain HTML page that works without an app or login. Voice messages autoplay via `<audio autoplay>` on the HTML page and via `useAudioPlayer` in the in-app share screen.
   - Delivery status (sent / failed / pending) is shown to the user on the Active Event screen.
-- **Public share view**: `/api/share/{token}/page` (backend HTML, sent in emails) and `/share/{token}` (in-app Expo route for anyone who has the app).
-- **Resolve**: One tap expires every share link for that event.
+- **Public share view**: `/api/share/{token}/page` (backend HTML, sent in emails) and `/share/{token}` (in-app Expo route).
+- **Resolve**: One tap expires every share link + file token for that event.
 - **Subscription UI**: Free / Handoff Plus / Family. Mocked — server updates `subscription_tier` but no billing.
+- **Warm visual life**: Custom line-illustrations (dog on a porch, windowsill plant, park bench, house, medication bottle, cupped hands) and a subtle background dot texture. No stock photos, no icon-only empty states.
 - **Settings**: Sign out, delete account (cascades all data).
 
 ## Tech

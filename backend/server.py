@@ -203,6 +203,7 @@ class ProfileIn(BaseModel):
     type: ProfileType
     care_instructions: str = ""
     photo_path: Optional[str] = None
+    voice_path: Optional[str] = None
 
 
 class Profile(ProfileIn):
@@ -356,9 +357,33 @@ async def list_profiles(user=Depends(get_current_user)):
     return docs
 
 
+FREE_TIER_VOICE_LIMIT = 1
+
+
+def _voice_allowed_for(user: dict, existing_profile_id: Optional[str] = None):
+    """Free tier can have voice on 1 profile. Returns None if allowed, or an error string."""
+    tier = user.get("subscription_tier") or "free"
+    if tier != "free":
+        return None
+
+    async def check():
+        q = {"user_id": user["user_id"], "voice_path": {"$ne": None}}
+        if existing_profile_id:
+            q["profile_id"] = {"$ne": existing_profile_id}
+        count = await db.profiles.count_documents(q)
+        return count
+    return check
+
+
 @api.post("/profiles")
 async def create_profile(body: ProfileIn, user=Depends(get_current_user)):
     now = datetime.now(timezone.utc)
+    if body.voice_path:
+        checker = _voice_allowed_for(user)
+        if checker is not None:
+            count = await checker()
+            if count >= FREE_TIER_VOICE_LIMIT:
+                raise HTTPException(status_code=402, detail="Voice messages on additional profiles require Handoff Plus")
     doc = {
         "profile_id": f"prof_{uuid.uuid4().hex[:12]}",
         "user_id": user["user_id"],
@@ -366,6 +391,7 @@ async def create_profile(body: ProfileIn, user=Depends(get_current_user)):
         "type": body.type,
         "care_instructions": body.care_instructions,
         "photo_path": body.photo_path,
+        "voice_path": body.voice_path,
         "created_at": now,
         "updated_at": now,
     }
@@ -375,6 +401,12 @@ async def create_profile(body: ProfileIn, user=Depends(get_current_user)):
 
 @api.put("/profiles/{profile_id}")
 async def update_profile(profile_id: str, body: ProfileIn, user=Depends(get_current_user)):
+    if body.voice_path:
+        checker = _voice_allowed_for(user, existing_profile_id=profile_id)
+        if checker is not None:
+            count = await checker()
+            if count >= FREE_TIER_VOICE_LIMIT:
+                raise HTTPException(status_code=402, detail="Voice messages on additional profiles require Handoff Plus")
     result = await db.profiles.update_one(
         {"profile_id": profile_id, "user_id": user["user_id"]},
         {"$set": {
@@ -382,6 +414,7 @@ async def update_profile(profile_id: str, body: ProfileIn, user=Depends(get_curr
             "type": body.type,
             "care_instructions": body.care_instructions,
             "photo_path": body.photo_path,
+            "voice_path": body.voice_path,
             "updated_at": datetime.now(timezone.utc),
         }},
     )
@@ -450,7 +483,7 @@ async def delete_contact(contact_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
-# ---------- Photo upload ----------
+# ---------- Photo / audio upload ----------
 @api.post("/upload")
 async def upload_photo(file: UploadFile = File(...), user=Depends(get_current_user)):
     ext = (file.filename or "img").rsplit(".", 1)[-1].lower()
@@ -464,9 +497,40 @@ async def upload_photo(file: UploadFile = File(...), user=Depends(get_current_us
         "path": result["path"],
         "owner_id": user["user_id"],
         "size": result.get("size"),
+        "kind": "photo",
         "created_at": datetime.now(timezone.utc),
     })
     return {"path": result["path"]}
+
+
+AUDIO_EXTS = ("m4a", "mp3", "aac", "wav", "webm", "ogg", "mp4", "caf")
+
+
+@api.post("/upload/audio")
+async def upload_audio(file: UploadFile = File(...), user=Depends(get_current_user)):
+    ext = (file.filename or "audio.m4a").rsplit(".", 1)[-1].lower()
+    if ext not in AUDIO_EXTS:
+        ext = "m4a"
+    path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4().hex}.{ext}"
+    data = await file.read()
+    content_type = file.content_type or "audio/mp4"
+    result = await run_in_threadpool(_put_object_sync, path, data, content_type)
+    await db.uploads.insert_one({
+        "path": result["path"],
+        "owner_id": user["user_id"],
+        "size": result.get("size"),
+        "kind": "audio",
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"path": result["path"]}
+
+
+@api.get("/quota")
+async def get_quota(user=Depends(get_current_user)):
+    tier = user.get("subscription_tier") or "free"
+    used = await db.profiles.count_documents({"user_id": user["user_id"], "voice_path": {"$ne": None}})
+    limit = FREE_TIER_VOICE_LIMIT if tier == "free" else None
+    return {"tier": tier, "voice": {"used": used, "limit": limit}}
 
 
 def _issue_photo_token(path: str) -> str:
@@ -516,15 +580,19 @@ def _app_share_deep_link(share_token: str) -> str:
 @api.post("/activate")
 async def activate(user=Depends(get_current_user)):
     contacts = await db.contacts.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(20)
-    profiles = await db.profiles.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(200)
+    profiles = await db.profiles.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc)
 
     shares = []
-    photo_tokens = []
+    file_tokens = []
+    # Generate one token per uploaded asset (photo + voice) on each profile so
+    # trusted contacts can fetch them without a login.
     for p in profiles:
         if p.get("photo_path"):
-            photo_tokens.append(secrets.token_urlsafe(16))
+            file_tokens.append(secrets.token_urlsafe(16))
+        if p.get("voice_path"):
+            file_tokens.append(secrets.token_urlsafe(16))
 
     for c in contacts:
         share_token = secrets.token_urlsafe(24)
@@ -538,7 +606,7 @@ async def activate(user=Depends(get_current_user)):
             "delivery_status": "pending",
             "delivered_at": None,
             "viewed_at": None,
-            "photo_tokens": photo_tokens,
+            "photo_tokens": file_tokens,
             "created_at": now,
         }
         await db.activation_shares.insert_one(dict(share_doc))
@@ -652,18 +720,26 @@ async def _load_share_payload(share_token: str) -> Optional[dict]:
         )
     # activation email button links to the HTML page served by backend (not the SPA route)
     # so contacts who don't have JS still see something readable.
+    file_tokens = share.get("photo_tokens", []) or []
     photo_map = {}
-    photo_tokens = share.get("photo_tokens", []) or []
+    voice_map = {}
     idx = 0
     for p in profiles:
         if p.get("photo_path"):
-            if idx < len(photo_tokens):
-                photo_map[p["profile_id"]] = photo_tokens[idx]
+            if idx < len(file_tokens):
+                photo_map[p["profile_id"]] = file_tokens[idx]
+            idx += 1
+        if p.get("voice_path"):
+            if idx < len(file_tokens):
+                voice_map[p["profile_id"]] = file_tokens[idx]
             idx += 1
     for p in profiles:
         if p.get("photo_path"):
             tok = photo_map.get(p["profile_id"])
             p["photo_url"] = f"/api/files/{p['photo_path']}?token={tok}" if tok else None
+        if p.get("voice_path"):
+            tok = voice_map.get(p["profile_id"])
+            p["voice_url"] = f"/api/files/{p['voice_path']}?token={tok}" if tok else None
     return {
         "expired": False,
         "owner_name": owner.get("name") if owner else "A friend",
@@ -705,6 +781,15 @@ async def public_share_html(share_token: str):
         photo = ""
         if p.get("photo_url"):
             photo = f'<img src="{escape(p["photo_url"])}" alt="" style="width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin-bottom:12px">'
+        audio = ""
+        if p.get("voice_url"):
+            audio = (
+                f'<div style="background:#F2F2EE;border-radius:12px;padding:12px;margin-bottom:12px;'
+                f'display:flex;align-items:center;gap:10px">'
+                f'<span style="font-size:13px;color:#374C60;font-weight:600">A message from {owner}</span>'
+                f'<audio controls preload="auto" autoplay style="flex:1;min-width:0">'
+                f'<source src="{escape(p["voice_url"])}"></audio></div>'
+            )
         raw_instr = escape(p.get("care_instructions") or "").replace("\n", "<br>")
         instr_html = raw_instr or '<em style="color:#69747F">No instructions written.</em>'
         profile_html += (
@@ -712,6 +797,7 @@ async def public_share_html(share_token: str):
             f'<div style="display:inline-block;background:#ECF1F5;color:#374C60;font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;margin-bottom:10px">{escape(type_labels.get(p["type"], p["type"]))}</div>'
             f'<h2 style="margin:0 0 12px;font-size:22px;color:#1A2026">{escape(p["name"])}</h2>'
             f'{photo}'
+            f'{audio}'
             f'<div style="font-size:16px;line-height:1.6;color:#1A2026">{instr_html}</div>'
             f'</section>'
         )

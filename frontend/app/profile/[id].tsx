@@ -8,9 +8,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
+import { AudioModule, useAudioRecorder, useAudioPlayer, RecordingPresets } from "expo-audio";
 
 import { api, fileUrl, getAuthToken } from "@/src/api";
+import { useAuth } from "@/src/auth-context";
 import { makeStyles, useTheme } from "@/src/theme";
+import { IllustrationForType } from "@/src/illustrations";
 
 const TYPES: Array<{ id: string; label: string; icon: string; placeholder: string }> = [
   { id: "pet", label: "Pet", icon: "github", placeholder: "Feeds twice a day: 1 cup dry food at 7am and 6pm. Water bowl by the back door. Vet: Dr. Chen (555-0101). Loves the blue mouse toy. No cheese — upsets stomach." },
@@ -28,14 +31,25 @@ export default function ProfileEdit() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
 
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("pet");
   const [instructions, setInstructions] = useState("");
   const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [voicePath, setVoicePath] = useState<string | null>(null);
+  const [voiceUri, setVoiceUri] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [quotaHit, setQuotaHit] = useState(false);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const playbackUri = voiceUri || (voicePath ? `${fileUrl(voicePath)}` : null);
+  const player = useAudioPlayer(playbackUri || undefined);
 
   useEffect(() => {
     if (isNew) return;
@@ -48,6 +62,7 @@ export default function ProfileEdit() {
           setType(p.type);
           setInstructions(p.care_instructions || "");
           setPhotoPath(p.photo_path || null);
+          setVoicePath(p.voice_path || null);
         }
       } finally { setLoading(false); }
     })();
@@ -69,15 +84,71 @@ export default function ProfileEdit() {
     } catch (e) { console.error(e); }
   };
 
+  const startRecording = async () => {
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) return;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setRecording(true);
+    } catch (e) { console.error(e); }
+  };
+
+  const stopRecording = async () => {
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      setRecording(false);
+      if (uri) {
+        setVoiceBusy(true);
+        try {
+          const up = await api.uploadAudio(uri, "voice.m4a", "audio/mp4");
+          setVoicePath(up.path);
+          setVoiceUri(uri);
+        } catch (e: any) {
+          console.error(e);
+        } finally { setVoiceBusy(false); }
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const removeVoice = () => {
+    try { player?.pause(); } catch {}
+    setVoicePath(null);
+    setVoiceUri(null);
+    setQuotaHit(false);
+  };
+
+  const playVoice = () => {
+    try {
+      player.seekTo(0);
+      player.play();
+    } catch (e) { console.error(e); }
+  };
+
   const save = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      const body = { name: name.trim(), type, care_instructions: instructions, photo_path: photoPath };
+      const body = {
+        name: name.trim(),
+        type,
+        care_instructions: instructions,
+        photo_path: photoPath,
+        voice_path: voicePath,
+      };
       if (isNew) await api.createProfile(body);
       else await api.updateProfile(String(id), body);
       router.back();
-    } catch (e) { console.error(e); }
+    } catch (e: any) {
+      if (e?.status === 402) {
+        setQuotaHit(true);
+        setSaveError("Voice messages on additional profiles need Handoff Plus. Remove the voice message or upgrade in Settings.");
+      } else {
+        setSaveError(e?.message || "Could not save profile");
+      }
+    }
     finally { setSaving(false); }
   };
 
@@ -90,6 +161,7 @@ export default function ProfileEdit() {
   }
 
   const current = TYPES.find((t) => t.id === type)!;
+  const tier = user?.subscription_tier || "free";
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -106,7 +178,11 @@ export default function ProfileEdit() {
           ) : <View style={styles.headerBtn} />}
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 140 }}>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 160 }}>
+          <View style={styles.illoWrap}>
+            <IllustrationForType type={type} size={140} />
+          </View>
+
           <Text style={styles.label}>Type</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }} style={{ marginBottom: 20 }}>
             {TYPES.map((t) => {
@@ -151,7 +227,7 @@ export default function ProfileEdit() {
             {photoPath ? (
               <Image
                 source={{ uri: fileUrl(photoPath), headers: { Authorization: `Bearer ${getAuthToken()}` } }}
-                style={StyleSheet.absoluteFillObject as any}
+                style={StyleSheet.absoluteFill as any}
                 contentFit="cover"
               />
             ) : (
@@ -161,9 +237,57 @@ export default function ProfileEdit() {
               </View>
             )}
           </Pressable>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 24, marginBottom: 8 }}>
+            <Text style={[styles.label, { marginBottom: 0 }]}>Personal message</Text>
+            {tier === "free" && <View style={styles.plusChip}><Text style={styles.plusChipText}>Plus for unlimited</Text></View>}
+          </View>
+          <Text style={styles.helperText}>
+            Record a short voice note (10–30 seconds). It plays automatically when your trusted contact opens the link.
+          </Text>
+
+          {voicePath ? (
+            <View style={styles.voiceCard} testID="voice-card">
+              <View style={styles.voiceIcon}><Feather name="mic" size={20} color={colors.onBrandPrimary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voiceTitle}>Voice message saved</Text>
+                <Text style={styles.voiceSub}>Tap play to preview</Text>
+              </View>
+              <Pressable style={styles.voiceBtn} onPress={playVoice} testID="voice-play-button">
+                <Feather name="play" size={18} color={colors.brandPrimary} />
+              </Pressable>
+              <Pressable style={styles.voiceBtn} onPress={removeVoice} testID="voice-remove-button">
+                <Feather name="trash-2" size={18} color={colors.error} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={[styles.recordBtn, recording && { backgroundColor: colors.error, borderColor: colors.error }]}
+              onPress={recording ? stopRecording : startRecording}
+              disabled={voiceBusy}
+              testID="voice-record-button"
+            >
+              {voiceBusy ? (
+                <ActivityIndicator color={colors.brandPrimary} />
+              ) : recording ? (
+                <>
+                  <View style={styles.recordPulse} />
+                  <Text style={[styles.recordText, { color: colors.onError }]}>Tap to stop</Text>
+                </>
+              ) : (
+                <>
+                  <Feather name="mic" size={20} color={colors.brandPrimary} />
+                  <Text style={styles.recordText}>Tap to record</Text>
+                </>
+              )}
+            </Pressable>
+          )}
         </ScrollView>
 
         <View style={[styles.saveWrap, { paddingBottom: 16 + insets.bottom }]}>
+          {saveError ? (
+            <Text style={[styles.helperText, { color: colors.error, marginBottom: 8 }]}>{saveError}</Text>
+          ) : null}
           <Pressable
             style={[styles.saveBtn, (!name.trim() || saving) && { opacity: 0.5 }]}
             onPress={save}
@@ -202,7 +326,9 @@ const useStyles = makeStyles((colors) => ({
   },
   headerBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   headerTitle: { fontSize: 17, fontWeight: "700", color: colors.onSurface },
+  illoWrap: { alignItems: "center", marginTop: 4, marginBottom: 20 },
   label: { fontSize: 13, fontWeight: "700", color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
+  helperText: { fontSize: 13, color: colors.muted, marginBottom: 12, lineHeight: 18 },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
     padding: 14, fontSize: 16, color: colors.onSurface, marginBottom: 20, minHeight: 52,
@@ -217,7 +343,33 @@ const useStyles = makeStyles((colors) => ({
   photoBox: {
     height: 180, borderRadius: 16, borderWidth: 1, borderStyle: "dashed",
     borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary,
-    alignItems: "center", justifyContent: "center", overflow: "hidden",
+    alignItems: "center", justifyContent: "center", overflow: "hidden", marginBottom: 4,
+  },
+  plusChip: {
+    backgroundColor: colors.brandTertiary, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2,
+  },
+  plusChipText: { fontSize: 11, fontWeight: "700", color: colors.onBrandTertiary },
+  recordBtn: {
+    minHeight: 56, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10,
+  },
+  recordPulse: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.onError },
+  recordText: { fontSize: 16, fontWeight: "600", color: colors.brandPrimary },
+  voiceCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+    padding: 12,
+  },
+  voiceIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandPrimary,
+    alignItems: "center", justifyContent: "center",
+  },
+  voiceTitle: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
+  voiceSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  voiceBtn: {
+    width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   saveWrap: {
     position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.surface,

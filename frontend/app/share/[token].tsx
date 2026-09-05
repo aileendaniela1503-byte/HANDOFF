@@ -1,16 +1,71 @@
-import { useEffect, useState } from "react";
-import { View, Text, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, Pressable } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
 import { Image } from "expo-image";
+import { useAudioPlayer } from "expo-audio";
 
 import { api, BACKEND_URL } from "@/src/api";
 import { makeStyles, useTheme } from "@/src/theme";
+import { IllustrationForType } from "@/src/illustrations";
 
 const TYPE_LABEL: Record<string, string> = {
   pet: "Pet", dependent: "Dependent", medication: "Medication", plant: "Plant", home: "Home", other: "Other",
 };
+
+function VoicePlayer({ uri }: { uri: string }) {
+  const player = useAudioPlayer(uri);
+  const { colors } = useTheme();
+  const [playing, setPlaying] = useState(false);
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    // Autoplay once when the share loads. On native this works; on web autoplay
+    // is usually gated behind a user gesture, so we render an obvious play control.
+    if (startedRef.current) return;
+    startedRef.current = true;
+    try { player.play(); setPlaying(true); } catch {}
+  }, [player]);
+
+  useEffect(() => {
+    const listener = player.addListener?.("playbackStatusUpdate", (status: any) => {
+      if (status && typeof status.playing === "boolean") setPlaying(status.playing);
+    });
+    return () => { try { listener?.remove?.(); } catch {} };
+  }, [player]);
+
+  const toggle = () => {
+    try {
+      if (playing) { player.pause(); setPlaying(false); }
+      else { player.seekTo(0); player.play(); setPlaying(true); }
+    } catch {}
+  };
+
+  return (
+    <Pressable
+      onPress={toggle}
+      style={{
+        flexDirection: "row", alignItems: "center", gap: 12,
+        backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 12, marginBottom: 12,
+      }}
+      testID="share-voice-player"
+    >
+      <View style={{
+        width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandPrimary,
+        alignItems: "center", justifyContent: "center",
+      }}>
+        <Feather name={playing ? "pause" : "play"} size={18} color={colors.onBrandPrimary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onSurface }}>A message for you</Text>
+        <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
+          {playing ? "Playing…" : "Tap to play"}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function ShareView() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -75,7 +130,12 @@ export default function ShareView() {
                 style={styles.photo}
                 contentFit="cover"
               />
-            ) : null}
+            ) : (
+              <View style={{ alignItems: "center", marginBottom: 12 }}>
+                <IllustrationForType type={p.type} size={140} />
+              </View>
+            )}
+            {p.voice_url ? <VoicePlayer uri={`${BACKEND_URL}${p.voice_url}`} /> : null}
             <Text style={styles.instructions}>{p.care_instructions || "No instructions written."}</Text>
           </View>
         )) : (

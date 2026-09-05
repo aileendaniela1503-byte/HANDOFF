@@ -67,6 +67,19 @@ export const api = {
     return request("/upload", { method: "POST", body: form });
   },
 
+  uploadAudio: async (uri: string, name = "voice.m4a", type = "audio/mp4") => {
+    const form = new FormData();
+    if (Platform.OS === "web") {
+      const blob = await (await fetch(uri)).blob();
+      form.append("file", blob, name);
+    } else {
+      form.append("file", { uri, name, type } as any);
+    }
+    return request("/upload/audio", { method: "POST", body: form });
+  },
+
+  quota: () => request("/quota"),
+
   activate: () => request("/activate", { method: "POST" }),
   activeEvent: () => request("/events/active"),
   resolveEvent: (id: string) => request(`/events/${id}/resolve`, { method: "POST" }),

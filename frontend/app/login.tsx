@@ -5,6 +5,7 @@ import Feather from "@react-native-vector-icons/feather";
 
 import { useAuth } from "@/src/auth-context";
 import { useTheme, makeStyles } from "@/src/theme";
+import { IllustrationHands, TextureBackground } from "@/src/illustrations";
 
 export default function Login() {
   const { signIn } = useAuth();
@@ -24,10 +25,9 @@ export default function Login() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]} testID="login-screen">
+      <TextureBackground />
       <View style={styles.top}>
-        <View style={styles.badge}>
-          <Feather name="shield" size={32} color={colors.brandPrimary} />
-        </View>
+        <View style={styles.illo}><IllustrationHands size={140} /></View>
         <Text style={styles.title}>Handoff</Text>
         <Text style={styles.subtitle}>
           For the moment you can&apos;t be there.
@@ -78,10 +78,7 @@ export default function Login() {
 const useStyles = makeStyles((colors) => ({
   root: { flex: 1, paddingHorizontal: 24, backgroundColor: colors.surface, justifyContent: "space-between" },
   top: { alignItems: "flex-start", marginTop: 8 },
-  badge: {
-    width: 64, height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center",
-    backgroundColor: colors.brandTertiary, marginBottom: 16,
-  },
+  illo: { marginBottom: 8, marginLeft: -8 },
   title: { fontSize: 34, fontWeight: "700", color: colors.onSurface, letterSpacing: -0.5 },
   subtitle: { fontSize: 18, color: colors.muted, marginTop: 6 },
   mid: { marginVertical: 24 },

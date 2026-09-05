@@ -6,6 +6,7 @@ import Feather from "@react-native-vector-icons/feather";
 
 import { api } from "@/src/api";
 import { makeStyles, useTheme } from "@/src/theme";
+import { IllustrationHands } from "@/src/illustrations";
 
 export default function Contacts() {
   const { colors } = useTheme();
@@ -50,7 +51,7 @@ export default function Contacts() {
           <View style={{ paddingVertical: 40 }}><ActivityIndicator color={colors.brandPrimary} /></View>
         ) : contacts.length === 0 ? (
           <View style={styles.empty}>
-            <View style={styles.emptyIcon}><Feather name="users" size={26} color={colors.brandPrimary} /></View>
+            <IllustrationHands size={140} />
             <Text style={styles.emptyTitle}>No trusted contacts yet</Text>
             <Text style={styles.emptyText}>
               Add at least one person we can reach when you activate your handoff plan.
