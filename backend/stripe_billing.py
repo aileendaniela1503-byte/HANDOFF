@@ -6,8 +6,6 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from server import db, get_current_user, logger
-
 router = APIRouter(prefix="/api")
 
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY")
@@ -34,6 +32,11 @@ def _stripe_ready() -> bool:
     return bool(STRIPE_SECRET_KEY and STRIPE_PRICE_PLUS and STRIPE_PRICE_FAMILY and STRIPE_WEBHOOK_SECRET)
 
 
+async def _get_db_and_user_helpers():
+    from server import db, get_current_user, logger
+    return db, get_current_user, logger
+
+
 async def _sync_supabase_tier(user_id: str, tier: str):
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return
@@ -50,12 +53,21 @@ async def _sync_supabase_tier(user_id: str, tier: str):
             timeout=15,
         )
         if resp.status_code not in (200, 201, 204, 404):
-            logger.warning("Supabase subscription sync returned %s: %s", resp.status_code, resp.text)
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Supabase subscription sync failed: %s", exc)
+            try:
+                logger = (await _get_db_and_user_helpers())[2]
+                logger.warning("Supabase subscription sync returned %s: %s", resp.status_code, resp.text)
+            except Exception:
+                pass
+    except Exception as exc:
+        try:
+            logger = (await _get_db_and_user_helpers())[2]
+            logger.warning("Supabase subscription sync failed: %s", exc)
+        except Exception:
+            pass
 
 
 async def _update_user_subscription(user_id: str, tier: str, stripe_customer_id: Optional[str] = None):
+    db, _, _ = await _get_db_and_user_helpers()
     payload = {"subscription_tier": tier}
     if stripe_customer_id:
         payload["stripe_customer_id"] = stripe_customer_id
@@ -66,6 +78,7 @@ async def _update_user_subscription(user_id: str, tier: str, stripe_customer_id:
 async def _get_user_by_stripe_customer(stripe_customer_id: str):
     if not stripe_customer_id:
         return None
+    db, _, _ = await _get_db_and_user_helpers()
     return await db.users.find_one({"stripe_customer_id": stripe_customer_id}, {"_id": 0})
 
 
@@ -94,7 +107,10 @@ def _resolve_tier_from_subscription_object(obj: dict) -> Optional[str]:
 
 
 @router.post("/stripe/checkout")
-async def create_checkout_session(request: Request, user=Depends(get_current_user)):
+async def create_checkout_session(request: Request, user=Depends(lambda: None)):
+    from server import get_current_user
+    user = await get_current_user(request.headers.get("authorization"))
+
     if not _stripe_ready():
         raise HTTPException(status_code=500, detail="Stripe is not configured. Add STRIPE_SECRET_KEY, STRIPE_PRICE_PLUS, STRIPE_PRICE_FAMILY, and STRIPE_WEBHOOK_SECRET.")
 
@@ -107,6 +123,7 @@ async def create_checkout_session(request: Request, user=Depends(get_current_use
     if not price_id:
         raise HTTPException(status_code=500, detail=f"Price ID for {tier} is not configured.")
 
+    db, _, _ = await _get_db_and_user_helpers()
     stripe_customer_id = user.get("stripe_customer_id")
     if not stripe_customer_id:
         customer = stripe.Customer.create(
@@ -130,7 +147,9 @@ async def create_checkout_session(request: Request, user=Depends(get_current_use
 
 
 @router.post("/stripe/portal")
-async def create_customer_portal(user=Depends(get_current_user)):
+async def create_customer_portal(request: Request):
+    from server import get_current_user
+    user = await get_current_user(request.headers.get("authorization"))
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe is not configured.")
 
@@ -199,14 +218,18 @@ async def stripe_webhook(request: Request):
 
 
 @router.post("/subscription/upgrade")
-async def legacy_upgrade_subscription(request: Request, user=Depends(get_current_user)):
+async def legacy_upgrade_subscription(request: Request):
+    from server import get_current_user
+    user = await get_current_user(request.headers.get("authorization"))
     payload = await request.json()
     tier = (payload or {}).get("tier")
     if tier not in ("free", "plus", "family"):
         raise HTTPException(status_code=400, detail="Invalid tier")
 
     if tier == "free":
-        await _update_user_subscription(user["user_id"], "free")
+        db, _, _ = await _get_db_and_user_helpers()
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"subscription_tier": "free"}})
+        await _sync_supabase_tier(user["user_id"], "free")
         return {"ok": True, "subscription_tier": "free"}
 
     if not _stripe_ready():
