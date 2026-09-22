@@ -3,6 +3,9 @@ applications:
   - appRoot: frontend
     frontend:
         phases:
+            preBuild:
+                commands:
+                    - 'npm ci'
             build:
                 commands:
                     - 'npm run build'
@@ -11,4 +14,5 @@ applications:
             files:
                 - '**/*'
         cache:
-            paths: []
+            paths:
+                - 'node_modules/**/*'
