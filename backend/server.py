@@ -363,6 +363,56 @@ async def create_session(body: SessionBody):
 async def auth_me(user=Depends(get_current_user)):
     return user
 
+@api.post("/auth/signup")
+async def signup(body: SignupBody):
+    existing = await db.users.find_one({"email": body.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user_id = str(uuid.uuid4())
+    password_hash = pwd_context.hash(body.password)
+    user_doc = {
+        "user_id": user_id,
+        "email": body.email,
+        "name": body.name,
+        "password_hash": password_hash,
+        "picture": None,
+        "subscription_tier": "free",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.users.insert_one(user_doc)
+
+    session_token = secrets.token_hex(32)
+    await db.user_sessions.insert_one({
+        "session_token": session_token,
+        "user_id": user_id,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+    })
+
+    user_doc.pop("password_hash", None)
+    user_doc.pop("_id", None)
+    return {"session_token": session_token, "user": user_doc}
+
+
+@api.post("/auth/login")
+async def login(body: LoginBody):
+    user = await db.users.find_one({"email": body.email})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not pwd_context.verify(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    session_token = secrets.token_hex(32)
+    await db.user_sessions.insert_one({
+        "session_token": session_token,
+        "user_id": user["user_id"],
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+    })
+
+    user.pop("password_hash", None)
+    user.pop("_id", None)
+    return {"session_token": session_token, "user": user}
 
 @api.post("/auth/logout")
 async def logout(authorization: Optional[str] = Header(default=None)):
