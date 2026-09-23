@@ -187,7 +187,15 @@ ProfileType = Literal["pet", "dependent", "medication", "plant", "home", "other"
 
 class SessionBody(BaseModel):
     session_id: str
+    
+class SignupBody(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
 
+class LoginBody(BaseModel):
+    email: EmailStr
+    password: str
 
 class User(BaseModel):
     user_id: str
