@@ -25,7 +25,7 @@ export default function Login() {
     }
     setBusy(true);
     try {
-      await signInWithEmail(email, password);
+      await signInWithEmail(email.trim(), password);
     } catch (e: any) {
       setError(e?.message || "Sign in failed. Please try again.");
     } finally {
@@ -39,9 +39,7 @@ export default function Login() {
       <View style={styles.top}>
         <View style={styles.illo}><IllustrationHands size={140} /></View>
         <Text style={styles.title}>Handoff</Text>
-        <Text style={styles.subtitle}>
-          For the moment you can&apos;t be there.
-        </Text>
+        <Text style={styles.subtitle}>For the moment you can&apos;t be there.</Text>
       </View>
 
       <View style={styles.mid}>
@@ -49,18 +47,29 @@ export default function Login() {
           Quietly build a private plan — pets, medications, dependents, home notes — and hand it off to your
           trusted people the instant something happens.
         </Text>
-        <View style={styles.bullets}>
-          {[
-            { icon: "lock", text: "Private by default. Nothing shared until you activate." },
-            { icon: "users", text: "Your trusted contacts receive a secure, no-login page." },
-            { icon: "heart", text: "Peace of mind for the people who depend on you." },
-          ].map((b) => (
-            <View key={b.icon} style={styles.bullet}>
-              <Feather name={b.icon as any} size={18} color={colors.brandPrimary} />
-              <Text style={styles.bulletText}>{b.text}</Text>
-            </View>
-          ))}
-        </View>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email"
+          placeholderTextColor={colors.muted}
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          testID="login-email-input"
+        />
+        <TextInput
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password"
+          placeholderTextColor={colors.muted}
+          secureTextEntry
+          autoCapitalize="none"
+          autoComplete="password"
+          testID="login-password-input"
+        />
+        {!!error && <Text style={styles.error}>{error}</Text>}
       </View>
 
       <View style={styles.bottom}>
@@ -68,16 +77,9 @@ export default function Login() {
           onPress={onSignIn}
           disabled={busy}
           style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
-          testID="login-google-button"
+          testID="login-submit-button"
         >
-          {busy ? (
-            <ActivityIndicator color={colors.onBrandPrimary} />
-          ) : (
-            <>
-              <Feather name="log-in" size={20} color={colors.onBrandPrimary} />
-              <Text style={styles.ctaText}>Continue with Google</Text>
-            </>
-          )}
+          {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.ctaText}>Sign in</Text>}
         </Pressable>
         <Text style={styles.legal}>We never sell your data. Ever.</Text>
       </View>
@@ -93,9 +95,12 @@ const useStyles = makeStyles((colors) => ({
   subtitle: { fontSize: 18, color: colors.muted, marginTop: 6 },
   mid: { marginVertical: 24 },
   pitch: { fontSize: 17, lineHeight: 26, color: colors.onSurface, marginBottom: 20 },
-  bullets: { gap: 14 },
-  bullet: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  bulletText: { flex: 1, fontSize: 15, lineHeight: 22, color: colors.onSurfaceTertiary },
+  input: {
+    minHeight: 52, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
+    paddingHorizontal: 16, color: colors.onSurface, backgroundColor: colors.surface,
+    marginBottom: 12, fontSize: 16,
+  },
+  error: { color: colors.danger, fontSize: 14, marginTop: 2 },
   bottom: { gap: 12 },
   cta: {
     backgroundColor: colors.brandPrimary, minHeight: 56, borderRadius: 16,

@@ -20,6 +20,7 @@ type AuthState = {
   loading: boolean;
   user: User | null;
   signIn: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -28,6 +29,7 @@ const Ctx = createContext<AuthState>({
   loading: true,
   user: null,
   signIn: async () => {},
+  signInWithEmail: async () => {},
   signOut: async () => {},
   refresh: async () => {},
 });
@@ -70,14 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Capture any deep link URL that arrives before/after openAuthSessionAsync
     const sub = Linking.addEventListener("url", ({ url }) => {
       const sid = extractSessionId(url);
-      if (sid) {
-        doExchange(sid);
-      } else {
-        setPendingUrl(url);
-      }
+      if (sid) doExchange(sid);
+      else setPendingUrl(url);
     });
     return () => sub.remove();
   }, [doExchange]);
@@ -85,13 +83,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        // Web: parse session_id from URL first
         if (Platform.OS === "web") {
           const href = window.location.href;
           const sid = extractSessionId(href);
           if (sid) {
             await doExchange(sid);
-            // clean the URL
             try {
               const url = new URL(href);
               url.hash = "";
@@ -102,7 +98,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } else {
-          // Mobile: check initial URL
           const initial = await Linking.getInitialURL();
           const sid = extractSessionId(initial);
           if (sid) {
@@ -112,7 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // Fall back to stored token
         const stored = await loadToken();
         if (stored) {
           setAuthToken(stored);
@@ -124,7 +118,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [doExchange, refresh]);
 
-  // If a deep link arrived without a session id, ignore.
   useEffect(() => {
     if (pendingUrl) setPendingUrl(null);
   }, [pendingUrl]);
@@ -138,9 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
     let url: string | null = null;
-    if (result.type === "success" && (result as any).url) {
-      url = (result as any).url;
-    }
+    if (result.type === "success" && (result as any).url) url = (result as any).url;
     let sid = extractSessionId(url);
     if (!sid) {
       const initial = await Linking.getInitialURL();
@@ -148,6 +139,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (sid) await doExchange(sid);
   }, [doExchange]);
+
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    const res = await api.login(email, password);
+    setAuthToken(res.session_token);
+    await saveToken(res.session_token);
+    setUser(res.user);
+  }, []);
 
   const signOut = useCallback(async () => {
     try {
@@ -158,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ loading, user, signIn, signOut, refresh }), [loading, user, signIn, signOut, refresh]);
+  const value = useMemo(() => ({ loading, user, signIn, signInWithEmail, signOut, refresh }), [loading, user, signIn, signInWithEmail, signOut, refresh]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

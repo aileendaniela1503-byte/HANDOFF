@@ -17,20 +17,12 @@ export function getAuthToken() {
 
 async function request(path: string, options: RequestInit = {}, auth = true) {
   const headers: Record<string, string> = { ...(options.headers as any) };
-  if (auth && inMemoryToken) {
-    headers["Authorization"] = `Bearer ${inMemoryToken}`;
-  }
-  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
-  }
+  if (auth && inMemoryToken) headers["Authorization"] = `Bearer ${inMemoryToken}`;
+  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   const text = await res.text();
   let data: any = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!res.ok) {
     const err: any = new Error((data && data.detail) || `HTTP ${res.status}`);
     err.status = res.status;
@@ -41,8 +33,9 @@ async function request(path: string, options: RequestInit = {}, auth = true) {
 }
 
 export const api = {
-  createSession: (session_id: string) =>
-    request("/auth/session", { method: "POST", body: JSON.stringify({ session_id }) }, false),
+  createSession: (session_id: string) => request("/auth/session", { method: "POST", body: JSON.stringify({ session_id }) }, false),
+  login: (email: string, password: string) => request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
+  signup: (email: string, password: string, name: string) => request("/auth/signup", { method: "POST", body: JSON.stringify({ email, password, name }) }, false),
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
 
@@ -61,34 +54,26 @@ export const api = {
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
       form.append("file", blob, name);
-    } else {
-      form.append("file", { uri, name, type } as any);
-    }
+    } else form.append("file", { uri, name, type } as any);
     return request("/upload", { method: "POST", body: form });
   },
-
   uploadAudio: async (uri: string, name = "voice.m4a", type = "audio/mp4") => {
     const form = new FormData();
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
       form.append("file", blob, name);
-    } else {
-      form.append("file", { uri, name, type } as any);
-    }
+    } else form.append("file", { uri, name, type } as any);
     return request("/upload/audio", { method: "POST", body: form });
   },
 
   quota: () => request("/quota"),
-
   activate: () => request("/activate", { method: "POST" }),
   activeEvent: () => request("/events/active"),
   resolveEvent: (id: string) => request(`/events/${id}/resolve`, { method: "POST" }),
-
   listPlanned: () => request("/planned"),
   createPlanned: (body: any) => request("/planned", { method: "POST", body: JSON.stringify(body) }),
   updatePlanned: (id: string, body: any) => request(`/planned/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   cancelPlanned: (id: string) => request(`/planned/${id}`, { method: "DELETE" }),
-
   share: (token: string) => request(`/share/${token}`, {}, false),
   upgrade: (tier: string) => {
     const form = new FormData();
