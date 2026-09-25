@@ -95,7 +95,7 @@ _CRED_ASK = (
     "send us your password", "enter your password below", "confirm your card number",
     "your full card number", "seed phrase", "recovery phrase", "verify your card",
     "social security number", "confirm your bank details",
-)
+
 _HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
 
 
@@ -185,8 +185,6 @@ async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
 ProfileType = Literal["pet", "dependent", "medication", "plant", "home", "other"]
 
 
-class SessionBody(BaseModel):
-    session_id: str
     
 class SignupBody(BaseModel):
     email: EmailStr
