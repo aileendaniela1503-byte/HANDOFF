@@ -303,62 +303,6 @@ async def get_current_user(authorization: Optional[str] = Header(default=None)) 
     return user
 
 
-_SEEN_SESSION_IDS: set = set()
-
-
-@api.post("/auth/session")
-async def create_session(body: SessionBody):
-    sid = body.session_id
-    if sid in _SEEN_SESSION_IDS:
-        raise HTTPException(status_code=401, detail="Session already used")
-    _SEEN_SESSION_IDS.add(sid)
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            resp = await c.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": sid},
-            )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid session id")
-        data = resp.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Session exchange failed: {e}")
-        raise HTTPException(status_code=401, detail="Auth failed")
-
-    email = data.get("email")
-    name = data.get("name") or email
-    picture = data.get("picture")
-    session_token = data.get("session_token")
-    if not email or not session_token:
-        raise HTTPException(status_code=401, detail="Bad session data")
-
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "subscription_tier": "free",
-            "created_at": datetime.now(timezone.utc),
-        })
-
-    await db.user_sessions.insert_one({
-        "session_token": session_token,
-        "user_id": user_id,
-        "created_at": datetime.now(timezone.utc),
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
-    })
-
-    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return {"session_token": session_token, "user": user}
-
-
 @api.get("/auth/me")
 async def auth_me(user=Depends(get_current_user)):
     return user
