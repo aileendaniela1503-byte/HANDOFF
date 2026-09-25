@@ -1,5 +1,5 @@
 {
-  "app_name": "Handoff \u2014 Emergency Life Continuity",
+  "app_name": "Handoff — Emergency Life Continuity",
   "personality": "1 iOS-Native Clean",
   "personality_one_liner": "A calm, modest, and trustworthy utility that provides peace of mind, feeling more like a caring insurance assistant than a noisy tech product.",
   "color": {
@@ -89,13 +89,13 @@
   "screens": [
     {
       "name": "Auth",
-      "purpose": "Google sign-in and optional biometric lock.",
+      "purpose": "Email and password sign-in.",
       "states": {
         "loading": "Centered soft spinner",
         "empty": "N/A",
         "error": "Readable inline error message"
       },
-      "layout": "Hero graphic with a calm off-white/blue abstract background. Large, easy-to-read welcome text. Primary button for Google Sign-in at the bottom."
+      "layout": "Hero graphic with a calm off-white/blue abstract background. Large, easy-to-read welcome text. Email and password fields with a primary sign-in button at the bottom."
     },
     {
       "name": "Home",
@@ -160,21 +160,21 @@
   ],
   "images": {
     "hero_background": {
-      "url": "https://images.unsplash.com/photo-1645811791231-279658fb46dc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxzb2Z0JTIwYmx1ZSUyMGdyYWRpZW50JTIwdGV4dHVyZXxlbnwwfHx8fDE3ODg2NDMzMDV8MA&ixlib=rb-4.1.0&q=85",
+      "url": "https://images.unsplash.com/photo-1645811791231-279658fb46dc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxzb2Z0JTIwYmx1ZSUyMGdyYWRpZW50JTIwdGV4dHVyZXxlbnwwfHx8fDE",
       "alt": "Soft abstract blue gradient background"
     },
     "empty_state_home": {
-      "url": "https://images.unsplash.com/photo-1609510487268-a6512dc74d00?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxjYWxtJTIwbmF0dXJhbCUyMGVtcHR5JTIwcm9vbSUyMG9mZiUyMHdoaXRlfGVufDB8fHx8MTc4ODY0MzMwMHww&ixlib=rb-4.1.0&q=85",
+      "url": "https://images.unsplash.com/photo-1609510487268-a6512dc74d00?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxjYWxtJTIwbmF0dXJhbCUyMGVtcHR5JTIwcm9vbSUyMG9mZiUyMHdoaXR",
       "alt": "Calm natural room representing a peaceful home"
     },
     "empty_state_contacts": {
-      "url": "https://images.unsplash.com/photo-1766400933342-c94814d957ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxjYWxtJTIwcGVhY2VmdWwlMjBuYXR1cmFsJTIwc2NlbmVzJTIwb2ZmJTIwd2hpdGUlMjBibHVlfGVufDB8fHx8MTc4ODY0MzMwMHww&ixlib=rb-4.1.0&q=85",
+      "url": "https://images.unsplash.com/photo-1766400933342-c94814d957ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxjYWxtJTIwcGVhY2VmdWwlMjBuYXR1cmFsJTIwc2NlbmVzJTIwb2ZmJTI",
       "alt": "Peaceful white buildings with palm trees"
     }
   },
   "instructions_to_main_agent": [
     "Follow 1 iOS-Native Clean layout principles: generous padding, readable text, calm and non-intrusive elements.",
-    "Implement the custom color palette strictly. Use 'brandPrimary' (#2C63A0) exclusively for the oversized Activate button and major CTAs to make them stand out against the calm 'brand' and 'surface' colors.",
+    "Implement the custom color palette strictly. Use 'brandPrimary' (#2C63A0) exclusively for the oversized Activate button and major CTAs to make them stand out against the calm 'brand' and 'surface' tones.",
     "Ensure the base font size is larger than default (16pt base) to meet accessibility and legibility goals for stressful moments.",
     "Do not use color alone to convey status; always pair with an icon and text (e.g., success green + check icon + 'Delivered').",
     "The 'Activate' button on the Home screen must be sticky at the bottom and significantly larger (e.g., min height 56-64pt) than standard buttons.",
