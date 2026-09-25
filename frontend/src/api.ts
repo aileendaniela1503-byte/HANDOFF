@@ -33,7 +33,6 @@ async function request(path: string, options: RequestInit = {}, auth = true) {
 }
 
 export const api = {
-  createSession: (session_id: string) => request("/auth/session", { method: "POST", body: JSON.stringify({ session_id }) }, false),
   login: (email: string, password: string) => request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
   signup: (email: string, password: string, name: string) => request("/auth/signup", { method: "POST", body: JSON.stringify({ email, password, name }) }, false),
   me: () => request("/auth/me"),
